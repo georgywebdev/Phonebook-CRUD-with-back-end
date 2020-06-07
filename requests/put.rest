@@ -1,7 +1,0 @@
-PUT http://localhost:3001/api/persons:id
-Content-Type: application/json
-
-{
-    "name": "Tony Macdonald",
-    "number": "678-981-128"
-}
