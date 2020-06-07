@@ -1,90 +1,96 @@
 const express = require("express");
 const cors = require("cors");
 const app = express();
+const Person = require("./models/person");
 
 app.use(cors());
+app.use(express.static("build"));
 app.use(express.json());
 
-const persons = [
-  {
-    name: "Rida Holcomb",
-    number: "443-690-778",
-    id: 1,
-  },
-  {
-    name: "Dan Abramov",
-    number: "269-807-720",
-    id: 2,
-  },
-  {
-    name: "Harvey Roberson",
-    number: "773-549-030",
-    id: 3,
-  },
-  {
-    name: "Tony Macdonald",
-    number: "678-981-127",
-    id: 4,
-  },
-];
-
 app.get("/api/persons", (request, response) => {
-  response.json(persons);
+  Person.find({}).then((persons) => {
+    response.json(persons);
+  });
 });
 
-app.get("/api/persons/:id", (request, response) => {
-  const id = Number(request.params.id);
-  const person = persons.find((person) => person.id === id);
-
-  if (person) {
-    response.json(person);
-  } else {
-    response.status(404).end();
-  }
+app.get("/api/persons/:id", (request, response, next) => {
+  Person.findById(request.params.id)
+    .then((person) => {
+      if (person) {
+        response.json(person);
+      } else {
+        response.status(404).end();
+      }
+    })
+    .catch((error) => next(error));
 });
 
-let info = `Phonebook has ${persons.length} persons
+let info = `Phonebook has ${Person.length} persons
 ${new Date()}`;
 
 app.get("/info", (request, response) => {
   response.json(info);
 });
 
-const generateId = () => {
-  const maxId = persons.length > 0 ? Math.max(...persons.map((n) => n.id)) : 0;
-  return maxId + 1;
-};
-
-app.post("/api/persons", (request, response) => {
+app.post("/api/persons", (request, response, next) => {
   const body = request.body;
 
-  if (!body.name || !body.number) {
-    return response.status(400).json({
-      error: "The name or number is missing",
-    });
+  if (body.name === undefined && body.number === undefined) {
+    return response
+      .status(400)
+      .json({ error: "The name or number is missing" });
   }
 
-  if (persons.find((person) => person.name === body.name)) {
-    return response
-      .status(409)
-      .json({ error: "The name already exists in the phonebook" });
-  }
+  const person = new Person({
+    name: body.name,
+    number: body.number,
+  });
+
+  person
+    .save()
+    .then((savedPerson) => savedPerson.toJSON())
+    .then((savedAndFormattedPerson) => {
+      response.json(savedAndFormattedPerson);
+    })
+    .catch((error) => next(error));
+});
+
+app.delete("/api/persons/:id", (request, response, next) => {
+  Person.findByIdAndRemove(request.params.id)
+    .then((result) => {
+      response.status(204).end();
+    })
+    .catch((error) => next(error));
+});
+
+app.put("/api/persons/:id", (request, response, next) => {
+  const body = request.body;
 
   const person = {
     name: body.name,
     number: body.number,
-    id: generateId(),
   };
-  persons.push(person);
-  response.json(person);
+
+  Person.findByIdAndUpdate(request.params.id, person, { new: true })
+    .then((updatedPerson) => {
+      response.json(updatedPerson);
+    })
+    .catch((error) => next(error));
 });
 
-app.delete("/api/persons/:id", (request, response) => {
-  const id = Number(request.params.id);
-  persons = persons.filter((person) => person.id !== id);
+const errorHandler = (error, request, response, next) => {
+  console.error(error.message);
 
-  response.status(204).end();
-});
+  if (error.name === "CastError") {
+    return response.status(400).send({ error: "Wrong id format" });
+  } else if (error.name === "ValidationError") {
+    return response.status(400).json({ error: error.message });
+  }
+
+  next(error);
+};
+
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
